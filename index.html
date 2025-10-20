@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>訪問看護スケジュール管理 v6.8.5（安定版・最小修正）</title>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <style>
+    :root{
+      --brand:#2f7df6; --brand-2:#5fb2ff; --bg:#f5f9ff; --panel:#ffffff; --line:#d9e7fb; --text:#0c1b2a; --muted:#6c7a90;
+      --chip:#eef6ff; --danger:#e24a4a; --ok:#2fbf71; --shadow:0 2px 10px rgba(12,27,42,.06);
+      --event-border:rgba(255,255,255,.95);
+    }
+    body{font-family:'Noto Sans JP',system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+    header{background:linear-gradient(90deg,var(--brand),var(--brand-2));color:#fff;display:flex;justify-content:space-between;align-items:center;padding:10px 16px;box-shadow:var(--shadow)}
+    header h1{margin:0;font-size:1.06rem;letter-spacing:.2px}
+    header .btns button{margin-left:6px;padding:8px 12px;border-radius:10px;border:1px solid #fff;background:rgba(255,255,255,.12);color:#fff;font-weight:800;cursor:pointer}
+    header .btns button:hover{background:rgba(255,255,255,.2)}
+    .layout{display:grid;grid-template-columns:380px 1fr;gap:12px;height:calc(100vh - 58px);padding:12px;box-sizing:border-box}
+    aside,main{background:var(--panel);border-radius:14px;box-shadow:var(--shadow);overflow:auto}
+    aside{padding:14px;position:relative;border:1px solid var(--line)}
+    main{padding:6px;border:1px solid var(--line)}
+    h3{margin:8px 0;font-size:1rem}
+    label{display:block;margin:6px 0 4px;font-weight:700}
+    input,select,button{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;box-sizing:border-box;font-size:1rem}
+    input::placeholder{color:#9fb4cf}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+    .chip{background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:8px}
+    #calendar{min-height:78vh}
+    .sticky-bottom{position:sticky;bottom:0;background:#fff;padding-top:8px;border-top:1px solid #e9f1ff}
+    .sticky-bottom .primary{background:var(--brand);color:#fff;border-color:var(--brand);font-weight:800}
+    @media (max-width:768px){.layout{grid-template-columns:1fr;height:auto}aside{order:2}main{order:1}}
+
+    /* FullCalendar 調整 */
+    .fc .fc-toolbar-title{font-weight:800}
+    .fc .fc-button{border-radius:10px !important}
+    .fc .fc-timegrid-slot{height:46px}
+    .fc-v-event{border:2px solid var(--event-border);border-radius:12px;padding:4px 6px;font-weight:800;overflow:hidden;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12);opacity:.98}
+    .fc-v-event:hover{filter:brightness(1.04);transform:translateY(-1px);transition:.15s}
+
+    /* モーダル */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:999}
+    .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:16px;z-index:1000;min-width:340px;max-width:92vw;border:1px solid var(--line)}
+    .modal h3{margin-top:0}
+    .actions{display:flex;gap:8px;margin-top:10px}
+    .btn{padding:10px 12px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-weight:800}
+    .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+    .btn.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+    .btn.ghost{background:#fff;color:var(--brand);border-color:var(--brand)}
+
+    /* 印刷 */
+    @media print{
+      @page{size:A4 landscape;margin:12mm}
+      header{display:none}
+      .layout{grid-template-columns:1fr}
+      aside{display:none}
+      main{border:none}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>訪問看護スケジュール管理 v6.8.5</h1>
+    <div class="btns">
+      <button id="btnResetWeek">今週クリア</button>
+      <button id="btnPrint">印刷</button>
+      <button id="btnExportExcel">Excel出力</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <h3>スタッフ登録</h3>
+      <div class="row">
+        <input id="staffName" placeholder="氏名（例：佐藤）" />
+        <select id="staffType" style="max-width:120px"><option value="FT">常勤</option><option value="PT">非常勤</option></select>
+      </div>
+      <div class="row"><button id="addStaff">追加</button></div>
+      <div id="staffList" class="chips"></div>
+
+      <h3>出勤パターン（複数帯OK）</h3>
+      <label>スタッフ</label><select id="shiftStaff"></select>
+      <label>曜日</label><div id="shiftDays" class="row"></div>
+      <label>勤務時間</label>
+      <div class="row"><input id="shiftStart" type="time" value="09:00" style="flex:1"><input id="shiftEnd" type="time" value="18:00" style="flex:1"></div>
+      <div class="row"><button id="addShift">出勤パターン追加</button></div>
+      <div id="shiftList" class="chips"></div>
+
+      <h3>利用者登録</h3>
+      <div class="row">
+        <input id="userName" placeholder="利用者氏名（例：田中）" />
+        <select id="userDuration" style="max-width:120px"><option value="60">60分</option><option value="30">30分</option></select>
+      </div>
+      <div class="row"><button id="addUser">追加</button></div>
+      <div id="userList" class="chips"></div>
+
+      <h3>基本訪問パターン</h3>
+      <label>利用者</label><select id="patternUser"></select>
+      <label>曜日</label><div id="patternDays" class="row"></div>
+      <label>開始時刻</label><input id="patternTime" type="time" value="09:00" />
+      <div class="row"><button id="addPattern">パターン追加</button></div>
+      <div id="patternList" class="chips"></div>
+
+      <div class="sticky-bottom">
+        <button id="btnAutoAssignBottom" class="primary">自動割当（表示週）</button>
+      </div>
+    </aside>
+    <main>
+      <div id="calendar"></div>
+    </main>
+  </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded',()=>{
+    // ====== Utils ======
+    const STORAGE_KEY='vk_data_v685';
+    const dayNames=['月','火','水','木','金','土','日'];
+    const fmtDateLocal=(d)=>{const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const da=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${da}`;};
+    const addMinStr=(hhmm, mins)=>{const [h,m]=hhmm.split(':').map(Number);const dt=new Date();dt.setHours(h);dt.setMinutes(m+mins);return dt.toTimeString().slice(0,5)};
+    const ceilTo15=(date)=>{const ms=15*60*1000;return new Date(Math.ceil(date.getTime()/ms)*ms)};
+    const uid=()=>Math.random().toString(36).slice(2,9);
+    const isMobile=()=>window.matchMedia('(max-width:768px)').matches;
+    const getWeekRange=(base)=>{const monday=new Date(base);monday.setDate(base.getDate()-((base.getDay()+6)%7));monday.setHours(0,0,0,0);return {monday,nextMonday:new Date(monday.getTime()+7*24*60*60*1000)}};
+
+    // ====== State ======
+    let staff=[], users=[], patterns=[], shifts=[], events=[];
+
+    // ====== DOM refs ======
+    const el={
+      staffName:document.getElementById('staffName'), staffType:document.getElementById('staffType'), addStaff:document.getElementById('addStaff'), staffList:document.getElementById('staffList'),
+      userName:document.getElementById('userName'), userDuration:document.getElementById('userDuration'), addUser:document.getElementById('addUser'), userList:document.getElementById('userList'),
+      patternUser:document.getElementById('patternUser'), patternDays:document.getElementById('patternDays'), patternTime:document.getElementById('patternTime'), addPattern:document.getElementById('addPattern'), patternList:document.getElementById('patternList'),
+      shiftStaff:document.getElementById('shiftStaff'), shiftDays:document.getElementById('shiftDays'), shiftStart:document.getElementById('shiftStart'), shiftEnd:document.getElementById('shiftEnd'), addShift:document.getElementById('addShift'), shiftList:document.getElementById('shiftList'),
+      btnAutoAssignBottom:document.getElementById('btnAutoAssignBottom'), btnResetWeek:document.getElementById('btnResetWeek'), btnPrint:document.getElementById('btnPrint'), btnExportExcel:document.getElementById('btnExportExcel'),
+      calendarHost:document.getElementById('calendar')
+    };
+
+    // ====== Storage ======
+    const save=()=>localStorage.setItem(STORAGE_KEY, JSON.stringify({staff,users,patterns,shifts,events}));
+    const load=()=>{try{const raw=localStorage.getItem(STORAGE_KEY); if(!raw) return; const d=JSON.parse(raw); staff=d.staff||[]; users=d.users||[]; patterns=d.patterns||[]; shifts=d.shifts||[]; events=d.events||[];}catch(e){console.error('load failed',e)}};
+
+    // ====== Render helpers ======
+    const renderWeekdayChecks=(c)=>{ c.innerHTML=''; dayNames.forEach(d=>{ const w=document.createElement('label'); w.className='chip'; w.innerHTML=`<input type="checkbox" value="${d}"> ${d}`; c.appendChild(w); }); };
+    const hydrateSelects=()=>{ el.patternUser.innerHTML=''; users.forEach(u=>{ const o=document.createElement('option'); o.value=u.id; o.textContent=u.name; el.patternUser.appendChild(o); }); el.shiftStaff.innerHTML=''; staff.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.textContent=s.name; el.shiftStaff.appendChild(o); }); };
+    const renderStaff=()=>{ el.staffList.innerHTML=''; staff.forEach(s=>{ el.staffList.innerHTML+=`<span class='chip'>${s.name}（${s.type==='PT'?'非常勤':'常勤'}） <button class='delStaff' data-id='${s.id}'>削除</button></span>`; }); };
+    const renderUsers=()=>{ el.userList.innerHTML=''; users.forEach(u=>{ el.userList.innerHTML+=`<span class='chip'>${u.name}（${u.duration}分） <button class='delUser' data-id='${u.id}'>削除</button></span>`; }); };
+    const renderPatterns=()=>{ el.patternList.innerHTML=''; patterns.forEach(p=>{ const u=users.find(x=>x.id===p.userId); el.patternList.innerHTML+=`<span class='chip'>${u?u.name:'不明'}：${(p.days||[]).join('・')} ${p.time||''} <button class='delPattern' data-id='${p.id}'>削除</button></span>`; }); };
+    const renderShifts=()=>{ el.shiftList.innerHTML=''; shifts.forEach(s=>{ const stf=staff.find(x=>x.id===s.staffId); el.shiftList.innerHTML+=`<span class='chip'>${stf?stf.name:'不明'}：${s.days.join('・')} ${s.start}〜${s.end} <button class='delShift' data-id='${s.id}'>削除</button></span>`; }); };
+    const renderAll=()=>{ hydrateSelects(); renderStaff(); renderUsers(); renderPatterns(); renderShifts(); };
+
+    // ====== Mutations ======
+    el.addStaff.addEventListener('click',()=>{ const name=el.staffName.value.trim(); if(!name) return alert('スタッフ名を入力'); const type=el.staffType.value; staff.push({id:uid(),name,type}); el.staffName.value=''; save(); renderAll(); calendar.refetchEvents(); });
+    el.addUser.addEventListener('click',()=>{ const name=el.userName.value.trim(); if(!name) return alert('利用者名を入力'); const duration=parseInt(el.userDuration.value)||30; users.push({id:uid(),name,duration}); el.userName.value=''; save(); renderAll(); });
+    el.addPattern.addEventListener('click',()=>{ const userId=el.patternUser.value; const time=el.patternTime.value; const days=[...el.patternDays.querySelectorAll('input:checked')].map(c=>c.value); if(!userId||days.length===0) return alert('利用者と曜日を選択'); patterns.push({id:uid(),userId,time,days,active:true}); save(); renderPatterns(); });
+    el.addShift.addEventListener('click',()=>{ const staffId=el.shiftStaff.value; const days=[...el.shiftDays.querySelectorAll('input:checked')].map(c=>c.value); const s=el.shiftStart.value; const e=el.shiftEnd.value; if(!staffId||days.length===0) return alert('スタッフと曜日を選択'); shifts.push({id:uid(),staffId,days,start:s,end:e}); save(); renderShifts(); });
+
+    // 削除（委譲）
+    document.body.addEventListener('click',(e)=>{
+      const t=e.target; if(!(t instanceof HTMLElement)) return;
+      if(t.classList.contains('delStaff')){ const id=t.dataset.id; const rm=staff.find(x=>x.id===id)?.name; staff=staff.filter(x=>x.id!==id); events=events.filter(ev=>{ const m=/（(.*)）$/.exec(ev.title||''); return !m || m[1]!==rm; }); save(); renderAll(); calendar.refetchEvents(); }
+      if(t.classList.contains('delUser')){ const id=t.dataset.id; const uname=users.find(x=>x.id===id)?.name; users=users.filter(x=>x.id!==id); patterns=patterns.filter(p=>p.userId!==id); events=events.filter(ev=> !uname || !ev.title?.startsWith(`${uname}（`)); save(); renderAll(); calendar.refetchEvents(); }
+      if(t.classList.contains('delPattern')){ const id=t.dataset.id; patterns=patterns.filter(p=>p.id!==id); save(); renderPatterns(); }
+      if(t.classList.contains('delShift')){ const id=t.dataset.id; shifts=shifts.filter(p=>p.id!==id); save(); renderShifts(); }
+    });
+
+    // ====== Calendar ======
+    const calendar=new FullCalendar.Calendar(el.calendarHost,{
+      timeZone:'local',
+      headerToolbar: isMobile()? {left:'prev,next today',center:'title',right:'timeGridDay'} : {left:'prev,next today',center:'title',right:'timeGridWeek,timeGridDay'},
+      initialView: isMobile()? 'timeGridDay' : 'timeGridWeek',
+      firstDay:1, locale:'ja', height:'auto', slotMinTime:'09:00', slotMaxTime:'20:00', expandRows:true, stickyHeaderDates:true,
+      editable:true, eventOverlap:true, nowIndicator:true,
+      events:(info,success)=>{ success((events||[]).map(e=>({...e}))); },
+      eventDidMount:(info)=>{ // スタッフ名から淡色パステル
+        const m=/（(.*)）$/.exec(info.event.title||''); const staffName=m?m[1]:''; let h=0; for(let i=0;i<staffName.length;i++) h=(h*31+staffName.charCodeAt(i))>>>0; const hue=h%360;
+        info.el.style.background=`hsl(${hue} 85% 82%)`;
+        info.el.style.borderColor='var(--event-border)';
+      },
+      eventDrop:(info)=>{ const s=ceilTo15(info.event.start); const e=ceilTo15(info.event.end); info.event.setDates(s,e); persistEvents(); },
+      eventResize:(info)=>{ const s=ceilTo15(info.event.start); const e=ceilTo15(info.event.end); info.event.setDates(s,e); persistEvents(); },
+      dateClick:(info)=>{ const usr=prompt('利用者名'); if(!usr) return; const stf=prompt('スタッフ名'); if(!stf) return; const s=new Date(info.dateStr); const e=new Date(s.getTime()+60*60000); events.push({title:`${usr}（${stf}）`,start:s.toISOString(),end:e.toISOString()}); save(); calendar.refetchEvents(); },
+      eventClick:(info)=>{ showEventPreview(info.event); }
+    });
+
+    function persistEvents(){ events = calendar.getEvents().map(ev=>({ title:ev.title, start:ev.start.toISOString(), end:ev.end.toISOString(), extendedProps: ev.extendedProps||{} })); save(); }
+
+    // ==== プレビュー／編集／削除 ====
+    function showEventPreview(event){
+      const overlay=document.createElement('div'); overlay.className='overlay';
+      const box=document.createElement('div'); box.className='modal';
+      const m=/^(.*)（(.*)）$/.exec(event.title||'');
+      const user=m?m[1]:''; const staffName=m?m[2]:'';
+      const start=event.start; const end=event.end||new Date(start.getTime()+30*60000);
+      const dur=Math.round((end-start)/60000);
+      const startStr=start.toTimeString().slice(0,5);
+
+      box.innerHTML = `
+        <h3>訪問プレビュー</h3>
+        <div><strong>スタッフ：</strong>${staffName||'(未設定)'}</div>
+        <div><strong>利用者：</strong>${user||'(未設定)'}</div>
+        <div class="row" style="margin-top:6px">
+          <div style="flex:1">
+            <label>開始</label>
+            <input id="pvStart" type="time" value="${startStr}">
+          </div>
+          <div style="flex:1">
+            <label>時間（分）</label>
+            <select id="pvDur"><option value="30" ${dur===30?'selected':''}>30</option><option value="60" ${dur===60?'selected':''}>60</option></select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <div style="flex:1">
+            <label>スタッフ</label>
+            <select id="pvStaff">${[...new Set(staff.map(s=>s.name))].map(n=>`<option ${n===staffName?'selected':''}>${n}</option>`).join('')}</select>
+          </div>
+          <div style="flex:1">
+            <label>利用者</label>
+            <select id="pvUser">${[...new Set(users.map(u=>u.name))].map(n=>`<option ${n===user?'selected':''}>${n}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="pvSave" class="btn primary">保存</button>
+          <button id="pvDelete" class="btn danger">削除</button>
+          <button id="pvClose" class="btn ghost">閉じる</button>
+        </div>
+      `;
+
+      document.body.appendChild(overlay); document.body.appendChild(box);
+      const close=()=>{ overlay.remove(); box.remove(); };
+      document.getElementById('pvClose').onclick=close;
+      document.getElementById('pvDelete').onclick=()=>{ if(confirm('削除しますか？')){ event.remove(); persistEvents(); close(); } };
+      document.getElementById('pvSave').onclick=()=>{
+        const st = document.getElementById('pvStart').value || '09:00';
+        const dur = parseInt(document.getElementById('pvDur').value)||60;
+        const stf = document.getElementById('pvStaff').value || staffName;
+        const usr = document.getElementById('pvUser').value || user;
+        const day = `${event.start.getFullYear()}-${String(event.start.getMonth()+1).padStart(2,'0')}-${String(event.start.getDate()).padStart(2,'0')}`;
+        const endStr = (function(hhmm,m){ const [h,mi]=hhmm.split(':').map(Number); const d=new Date(); d.setHours(h); d.setMinutes(mi+m); return d.toTimeString().slice(0,5);} )(st,dur);
+        event.setProp('title', `${usr}（${stf}）`);
+        event.setStart(`${day}T${st}:00`);
+        event.setEnd(`${day}T${endStr}:00`);
+        persistEvents(); close();
+      };
+    }
+
+    // ====== Auto assign (PT優先 + 出勤帯適合) ======
+    function autoAssignWeek(){
+      if(staff.length===0){ alert('スタッフを登録してください'); return; }
+      if(users.length===0){ alert('利用者を登録してください'); return; }
+      const active = patterns.filter(p => p.active !== false);
+      if(active.length===0){ alert('有効な基本訪問パターンがありません'); return; }
+
+      const rng = getWeekRange(calendar.getDate());
+      const monday = rng.monday; const nextMonday = rng.nextMonday;
+      const inWeek = (iso)=>{ const d=new Date(iso); return d>=monday && d<nextMonday; };
+
+      // 表示週の既存イベントを events から除去（複製防止）
+      events = (events||[]).filter(ev=> !inWeek(ev.start));
+
+      // 出勤パターン適合
+      const hasShiftLocal = (stfId, dayLabel, startStr, endStr)=>{
+        const sh = shifts.filter(x=>x.staffId===stfId && x.days.includes(dayLabel));
+        return sh.some(x=> x.start<=startStr && x.end>=endStr );
+      };
+
+      let placed=0, skipped=0;
+      for(const p of active){
+        const u = users.find(x=>x.id===p.userId); if(!u){ skipped++; continue; }
+        for(const d of (p.days||[])){
+          const idx = dayNames.indexOf(d); if(idx<0){ skipped++; continue; }
+          const day = new Date(monday); day.setDate(monday.getDate()+idx);
+          const st = p.time; const en = addMinStr(st, u.duration);
+          const candidates = staff.filter(s=> hasShiftLocal(s.id,d,st,en)).sort((a,b)=> (a.type==='PT'?0:1)-(b.type==='PT'?0:1));
+          const stf = candidates[0] || staff[0]; if(!stf){ skipped++; continue; }
+          const startISO = `${fmtDateLocal(day)}T${st}:00`;
+          const endISO   = `${fmtDateLocal(day)}T${en}:00`;
+
+          // 同スタッフ同時間帯の重複回避（当週の events だけで判定）
+          const ns = new Date(startISO), ne = new Date(endISO);
+          const clash = (events||[]).some(ev=>{
+            const m=/（(.*)）$/.exec(ev.title||''); const name=m?m[1]:'';
+            if(name!==stf.name) return false;
+            const s=new Date(ev.start), e=new Date(ev.end||ev.start);
+            return !(e<=ns || s>=ne);
+          });
+          if(clash){ skipped++; continue; }
+
+          events.push({ title:`${u.name}（${stf.name}）`, start:startISO, end:endISO });
+          placed++;
+        }
+      }
+
+      save();
+      calendar.refetchEvents();
+      alert(`自動割当 完了：配置 ${placed} 件 / 見送り ${skipped} 件（表示週）`);
+    }
+
+    // ====== Header buttons ======
+    el.btnResetWeek.onclick=()=>{ const {monday,nextMonday}=getWeekRange(calendar.getDate()); calendar.getEvents().forEach(ev=>{ if(ev.start>=monday && ev.start<nextMonday) ev.remove(); }); persistEvents(); };
+    el.btnPrint.onclick=()=>window.print();
+    el.btnExportExcel.onclick=()=>{ const {monday,nextMonday}=getWeekRange(calendar.getDate()); const rows=[["日付","曜日","開始","終了","利用者","スタッフ","分数"]]; const jp=['日','月','火','水','木','金','土']; calendar.getEvents().forEach(ev=>{ if(!(ev.start>=monday && ev.start<nextMonday)) return; const m=/^(.*)（(.*)）$/.exec(ev.title||''); const user=m?m[1]:''; const stf=m?m[2]:''; const s=ev.start, e=ev.end||new Date(s.getTime()+30*60000); rows.push([fmtDateLocal(s),jp[s.getDay()],s.toTimeString().slice(0,5),e.toTimeString().slice(0,5),user,stf, Math.round((e-s)/60000)]); }); const csv=rows.map(r=>r.map(x=>`"${String(x).replaceAll('"','""')}"`).join(',')).join('\n'); const blob=new Blob(["\ufeff"+csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); const wk=fmtDateLocal(getWeekRange(calendar.getDate()).monday); a.href=URL.createObjectURL(blob); a.download=`訪問看護_週次_${wk}.csv`; a.click(); URL.revokeObjectURL(a.href); };
+
+    // 左下 自動割当
+    el.btnAutoAssignBottom.addEventListener('click',autoAssignWeek);
+
+    // ====== Init ======
+    load(); renderWeekdayChecks(el.patternDays); renderWeekdayChecks(el.shiftDays); renderAll();
+    calendar.render();
+  });
+  </script>
+</body>
+</html>
